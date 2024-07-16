@@ -150,6 +150,18 @@ def extract_text_from_pdf(file: str) -> str:
 
     return text
 
+def extract_keyword_from_text(text: str) -> str:
+    # 假设每篇文章都以keyword开头
+    pattern = r"^keyword:\['(.*?)'\]"
+    matches = re.findall(pattern, text)
+
+    # 将提取到的字符串按逗号分割，并去除多余的空格和引号
+    if matches:
+        keywords = [keyword.strip().strip("'") for keyword in matches[0].split(', ')]
+    else:
+        keywords = []
+    return keywords
+
 
 def split_files_to_chunks(
     files: list,
@@ -162,6 +174,7 @@ def split_files_to_chunks(
 
     chunks = []
     sources = []
+    keywords = [] # 每篇文章的关键词list
 
     for file in files:
         if isinstance(file, tuple):
@@ -172,14 +185,17 @@ def split_files_to_chunks(
         _, file_extension = os.path.splitext(file)
         file_extension = file_extension.lower()
 
+        text_keywords = []
         if HAS_UNSTRUCTURED and file_extension[1:] in UNSTRUCTURED_FORMATS:
             text = partition(file)
+            text_keywords = extract_keyword_from_text(text=text)
             text = "\n".join([t.text for t in text]) if len(text) > 0 else ""
         elif file_extension == ".pdf":
             text = extract_text_from_pdf(file)
         else:  # For non-PDF text-based files
             with open(file, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read()
+            text_keywords = extract_keyword_from_text(text=text)
 
         if not text.strip():  # Debugging line to check if text is empty after reading
             logger.warning(f"No text available in file: {file}")
@@ -190,9 +206,10 @@ def split_files_to_chunks(
         else:
             tmp_chunks = split_text_to_chunks(text, max_tokens, chunk_mode, must_break_at_empty_line)
         chunks += tmp_chunks
+        keywords.append(text_keywords)
         sources += [{"source": url if url else file}] * len(tmp_chunks)
 
-    return chunks, sources
+    return chunks, sources, keywords
 
 
 def get_files_from_dir(dir_path: Union[str, List[str]], types: list = TEXT_FORMATS, recursive: bool = True):

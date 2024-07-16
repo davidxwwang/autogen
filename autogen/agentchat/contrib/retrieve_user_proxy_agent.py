@@ -342,12 +342,12 @@ class RetrieveUserProxyAgent(UserProxyAgent):
         docs = None
         if IS_TO_CHUNK:
             if self.custom_text_split_function is not None:
-                chunks, sources = split_files_to_chunks(
+                chunks, sources, keywords = split_files_to_chunks(
                     get_files_from_dir(self._docs_path, self._custom_text_types, self._recursive),
                     custom_text_split_function=self.custom_text_split_function,
                 )
             else:
-                chunks, sources = split_files_to_chunks(
+                chunks, sources, keywords = split_files_to_chunks(
                     get_files_from_dir(self._docs_path, self._custom_text_types, self._recursive),
                     self._chunk_token_size,
                     self._chunk_mode,
@@ -368,13 +368,30 @@ class RetrieveUserProxyAgent(UserProxyAgent):
             chunk_ids = [hashlib.blake2b(chunk.encode("utf-8")).hexdigest()[:HASH_LENGTH] for chunk in chunks]
             chunk_ids_set = set(chunk_ids)
             chunk_ids_set_idx = [chunk_ids.index(hash_value) for hash_value in chunk_ids_set]
+
+            def create_metadata(keywords, source):
+                keywords_json = {keyword: keyword for keyword in keywords}
+                keywords_json['source'] = source
+                return keywords_json
+           
             docs = [
-                Document(id=chunk_ids[idx], content=chunks[idx], metadata=sources[idx])
+                Document(id=chunk_ids[idx], content=chunks[idx], metadata=create_metadata(keywords[idx], sources[idx]['source']))
                 for idx in chunk_ids_set_idx
                 if chunk_ids[idx] not in all_docs_ids
             ]
-
+        self._keywords = self.flatterList(keywords)
         self._vector_db.insert_docs(docs=docs, collection_name=self._collection_name, upsert=True)
+
+    def flatterList(self, nested_list: List[List[str]]) -> List[str]:
+        flattened_list = []
+        # 创建一个集合来跟踪已经添加的元素
+        seen = set()
+        for sublist in nested_list:
+            for item in sublist:
+                if item not in seen:
+                    flattened_list += [item]  
+                    seen.add(item) 
+        return flattened_list
 
     def _is_termination_msg_retrievechat(self, message):
         """Check if a message is a termination message.
@@ -534,6 +551,47 @@ class RetrieveUserProxyAgent(UserProxyAgent):
             return True, self._generate_message(doc_contents, task=self._task)
         else:
             return False, None
+        
+    def get_keyword_message(self, problem: str) -> List[str]:
+        if self._keywords is None or self._keywords == []:
+            return []
+        
+        keyword = str(self._keywords)
+        instrcut = f"""given the keyword list:  {keyword} \n
+                        problem: {problem} \n
+        
+                      \n output the most semantic relevant keyword which  in keyword list to the problem containing 
+                        note! Not an exact match, a semantic similarity is sufficient, 
+                        only give the output, do not anything else.
+                        the output format is json like this:
+                        {{'keyword': 'keyword1', 'reason': '--- the reason ', 'similarity': '--- semantic closeness, expressed as a percentage'}}
+
+                    """
+        try:
+            rst = self.generate_oai_reply([{"role": "user", "content": instrcut}], None, None)[1]
+            import json
+            rst = rst.replace('json\n', '').replace('\n', '').replace('```', '')
+            data = json.loads(rst)
+            similarity = data['similarity']
+            similarity = similarity.replace('%', '')
+            x = float(similarity)
+            if x < 80:
+                return []
+
+            # 提取 keyword
+            keyword = data['keyword']
+
+            return [keyword]
+        except:
+            return []
+        
+        # match = re.search(r"'keyword': '([^']+)'", rst)
+        # if match:
+        #     keyword = match.group(1)
+        #     return keyword
+        # else:
+        #     print("No keyword found")
+        return ''
 
     def retrieve_docs(self, problem: str, n_results: int = 20, search_string: str = ""):
         """Retrieve docs based on the given problem and assign the results to the class property `_results`.
@@ -559,6 +617,25 @@ class RetrieveUserProxyAgent(UserProxyAgent):
             kwargs = {}
             if hasattr(self._vector_db, "type") and self._vector_db.type == "chroma":
                 kwargs["where_document"] = {"$contains": search_string} if search_string else None
+            # 目前只关注一个keyword情况
+            reference_keywords = self.get_keyword_message(problem=problem)
+            # results2 = self._vector_db.retrieve_docs(
+            #     queries=[problem],
+            #     n_results=n_results,
+            #     collection_name=self._collection_name,
+            #     distance_threshold=self._distance_threshold,
+            #     **kwargs,
+            # )
+            if len(reference_keywords) > 0:
+                # 对matedata
+                reference_list = [{keyword: keyword} for keyword in reference_keywords]
+                if len(reference_list) == 1:
+                    kwargs["where"] = reference_list[0]                   
+                else:
+                    kwargs["where"] = {"$and": reference_list}
+                keywords = str(reference_keywords)
+                problem = problem + "\n" + '里面问的keyword可能包括: ' + keywords
+
             results = self._vector_db.retrieve_docs(
                 queries=[problem],
                 n_results=n_results,

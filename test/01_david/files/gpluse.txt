@@ -1,0 +1,91 @@
+keyword:['CanTpCfgList', 'SIDCfgList', 'DIDCfgList', 'RoutineControlCfgList', 'DTCEventCfgList']
+
+CanTpCfgList 
+该表单主要是TP层相关的配置。 
+ConnectId：通道编号，对应DBC属性中的DiagConnection。UDS报文，设置为0；OBD报
+文设置为255 
+CanTpAddressingFormat： 表示的是 Tp 层采用的寻址方式，目前只支持 0：
+CANTP_STANDARD（当前仅支持 Normal）；1：CANTP_EXTENDED（预留）；2：CANTP_MIXED（预留） 
+BlockSize： 就是流控帧里面的blocksize 
+PaddingEn： Tp 层位填充使能 
+PaddingValue： 就是Tp层未使用位填充的数据 
+Time Value： As,Bs,Cs,Ar,Br,Cr 就是传输层的时间参数 
+Stmin:  Tp 层的 Stmin 参数 
+4.2 SIDCfgList 
+服务配置表，目前只支持下列的服务
+Sid： 服务ID 
+En： 是否使能该服务 
+LevelRef： 支持的安全等级，每个bit代表一个安全等级，依次从bit0 –bit7。 
+SessionRef： 支持的会话。每个bit代表一个会话 
+依次为：bit0 对应default。Bit1对应Programe，Bit2对应Extended 
+会话 
+注意：对于10服务，由于10子服务SessionRef默认配置为7。工具内部实现特殊需求：
+处于默认会话时，不支持10 02； 处于编程会话时，不支持10 03. 
+SubId： 支持的子服务 
+
+配置的demo
+-----------------------------------------
+Sid,En,LevelRef,SessionRef,SubId  
+1,1,15,7,1,2,3  
+--------------------------------------
+4.3 DIDCfgList 
+DID 配置表格，主要是22，2E和2F服务对应的DID 配置 
+Didname： DID 码。目前支持0XF190, 0xF190,F190, F 190格式 
+DidLen：DID 数据长度 
+DidAccess：表示该DID支持哪个的服务。 
+DidRead： 只支持22服务 
+DidReadAndWrite： 支持 22 和2E 服务 
+DidIoControl： 只支持2F服务 
+LevelRef： 支持的安全等级，每个bit代表一个安全等级，依次从bit0 –bit7。 
+SessionRef： 支持的会话。每个bit代表一个会话。 
+依次为：bit0 对应default。Bit1对应Programe，Bit2对应Extended 会话 
+DidIocontrolType: 2F 支持的处理类型 
+每个bit代表一种类型。 
+0:ReturnControlToEcu   
+1: ResetToDefault,  
+2:FreezeCurrentState, 
+3:shortTermAdjustment 
+Port Type： USE_DATA_SYNCH_CLIENT_SERVER： 同步处理接口 
+USE_DATA_ASYNCH_CLIENT_SERVER： 异步处理接口 
+一般配置规则： 只支持22 服务的did 选择USE_DATA_SYNCH_CLIENT_SERVER。 
+支持2E或者2F的DID选择USE_DATA_ASYNCH_CLIENT_SERVER 
+Location:设定 DID 的存储位置和文件定义位置。具体配置规则见：诊断DID的Location配
+置说明 
+4.4 RoutineControlCfgList 
+只要配置31服务的DID 相关的信息
+RoutineName： 例程DID名称 
+Identifier： 例程DID 码 
+SubSupported：参数包括： Start、Stop、RequestResults 
+InPutSize： 请求时的数据长度 
+OutPutSize： 响应时的数据长度 
+SecurityLevelRef： 支持的安全等级，每个bit代表一个安全等级，依次从bit0–bit7 
+SessionRef： 支持的会话。每个bit代表一个会话。 
+依次为：bit0 对应default。Bit1对应Programe，Bit2对应Extended 会话 
+Location: 表示对应callback 函数的生成位置。 
+0：Gp_DiagProxy_DcmCbk_supply.c 文件   
+4.5 DTCEventCfgList 
+故障DTC的配置，对应的19 服务内容的配置 
+1：Gp_DiagProxy_DcmCbk_custom.c 
+DtcCode： Dtc 码。16进制。目前支持0x170200，0X170200，170200，17 0200格式 
+注意：对于OBD DTC客户需求，若未定义具体的DtcCode，则可以设置为0xFF0000AA格式，其中FF0000
+固定，AA部分可以任意值。 
+DtcEventName：故障事件名称，目前和DTCCode是一一对应 
+DemEventKind： 表示故障处理的类型。DEM_EVENT_KIND_SWC 和DEM_EVENT_KIND_BSW 
+DEM_EVENT_KIND_SWC： APP 故障类型 
+DEM_EVENT_KIND_BSW： 底层故障类型 
+MaxNumFreezeFrameRecords： 最大的冻结帧的条目的个数 
+RecordNum： 冻结帧记录编号
+FreezeFrameListNum： 冻结帧包含的数据组类型编号，需要参考《DTCFreezeDataCfgList》
+表单 
+DemAgingSupport： 老化是否支持 
+DemAgingCouterThreshold： 老化阈值 
+DemEventPriority： 故障优先级。数据越小，优先级越大。范围（0-128）。如果是OBD 
+OTC ，优先级必须为最高优先级 
+DemIndicatorAttributesFlg： 如果是 OBD DTC 必须使能，1：表示使能。0：表示不使
+能 
+OBD DTC： OBD DTC Code， 两个字节 
+EnableConditionsRefListNum: 故障设置使能条件选择 
+DebounceRefList： 消抖列表选择，具体消抖参数需要在 DTCFreezeDataCfgList-> 
+DTCFreezeDataCfgList 
+注意：若没有Dem需求，需要将该表数据清空。则不会生成Dem模块；必须配置总线busoff故障，
+DtcEventName 设置为 DFC_BSW_+总线名称+_BUSOFF。
